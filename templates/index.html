@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG 知识库搭建工具</title>
+    <style>
+        :root {
+            --bg: #f5f6fa;
+            --card-bg: #ffffff;
+            --primary: #4f6ef7;
+            --primary-hover: #3b54d4;
+            --text: #2d3436;
+            --text-secondary: #636e72;
+            --border: #e1e4e8;
+            --sidebar-bg: #1e1e2e;
+            --sidebar-text: #cdd6f4;
+            --sidebar-active: #4f6ef7;
+            --danger: #e74c3c;
+            --success: #27ae60;
+            --warning: #f39c12;
+            --radius: 12px;
+            --shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 240px;
+            background: var(--sidebar-bg);
+            color: var(--sidebar-text);
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            top: 0; left: 0; bottom: 0;
+            z-index: 100;
+        }
+
+        .sidebar-logo {
+            padding: 24px 20px;
+            font-size: 20px;
+            font-weight: 700;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sidebar-logo .icon { font-size: 28px; }
+
+        .sidebar-nav {
+            flex: 1;
+            padding: 12px 0;
+        }
+
+        .sidebar-nav a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 20px;
+            color: var(--sidebar-text);
+            text-decoration: none;
+            font-size: 15px;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .sidebar-nav a:hover { background: rgba(255,255,255,0.05); }
+        .sidebar-nav a.active {
+            background: rgba(79,110,247,0.15);
+            color: #fff;
+            border-left-color: var(--sidebar-active);
+        }
+
+        .sidebar-footer {
+            padding: 16px 20px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            font-size: 12px;
+            color: rgba(255,255,255,0.4);
+        }
+
+        .main {
+            margin-left: 240px;
+            flex: 1;
+            padding: 32px;
+            max-width: 1000px;
+        }
+
+        .page { display: none; }
+        .page.active { display: block; }
+
+        .page-header {
+            margin-bottom: 28px;
+        }
+
+        .page-header h1 {
+            font-size: 26px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .page-header p {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .stat-card .label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .btn-primary:hover { background: var(--primary-hover); }
+
+        .btn-secondary {
+            background: #e9ecef;
+            color: var(--text);
+        }
+
+        .btn-secondary:hover { background: #dde1e5; }
+
+        .btn-danger {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        .btn-danger:hover { background: #c0392b; }
+
+        .btn-outline {
+            background: transparent;
+            border: 1.5px solid var(--border);
+            color: var(--text);
+        }
+
+        .btn-outline:hover { background: #f8f9fa; }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-lg {
+            padding: 12px 28px;
+            font-size: 15px;
+        }
+
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: var(--text-secondary);
+        }
+
+        textarea, input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            transition: border-color 0.2s;
+        }
+
+        textarea:focus, input[type="text"]:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79,110,247,0.1);
+        }
+
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-secondary);
+        }
+
+        .upload-zone:hover, .upload-zone.drag-over {
+            border-color: var(--primary);
+            background: rgba(79,110,247,0.04);
+            color: var(--primary);
+        }
+
+        .upload-zone .icon { font-size: 40px; margin-bottom: 8px; }
+
+        .file-list {
+            margin-top: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .file-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #f0f2f5;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .file-tag .remove {
+            cursor: pointer;
+            color: var(--danger);
+            font-weight: bold;
+        }
+
+        .answer-box {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 16px;
+            white-space: pre-wrap;
+            line-height: 1.7;
+            font-size: 15px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .source-list { margin-top: 16px; }
+
+        .source-item {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .source-item .source-name {
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 4px;
+        }
+
+        .source-item .source-content {
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 14px 20px;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            z-index: 9999;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+        }
+
+        .toast.success { background: var(--success); }
+        .toast.error { background: var(--danger); }
+        .toast.info { background: var(--primary); }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 48px 20px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+
+        .row {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        .row > * { flex: 1; }
+
+        .file-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 12px;
+        }
+
+        .file-table th {
+            background: #f8f9fa;
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .file-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .file-table tr:hover {
+            background: #f8f9fb;
+        }
+
+        .file-table .checkbox-cell {
+            width: 40px;
+            text-align: center;
+        }
+
+        .file-table input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
+
+        .file-table .ext-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .ext-badge.PDF { background: #fee2e2; color: #dc2626; }
+        .ext-badge.DOCX { background: #dbeafe; color: #2563eb; }
+        .ext-badge.TXT { background: #e0e7ff; color: #4f46e5; }
+
+        .select-all-row {
+            padding: 8px 12px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .select-all-row input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
+
+        .dir-scan-input {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .dir-scan-input input {
+            flex: 1;
+        }
+
+        .scan-result-info {
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        @media (max-width: 768px) {
+            .sidebar { width: 60px; }
+            .sidebar-logo span, .sidebar-nav a span, .sidebar-nav a .text { display: none; }
+            .sidebar-nav a { justify-content: center; padding: 12px; }
+            .main { margin-left: 60px; padding: 16px; }
+            .row { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="sidebar-logo">
+            <span class="icon">📚</span>
+            <span>RAG 知识库</span>
+        </div>
+        <div class="sidebar-nav">
+            <a href="#" class="nav-link active" data-page="chat">
+                <span>💬</span>
+                <span>智能问答</span>
+            </a>
+            <a href="#" class="nav-link" data-page="docs">
+                <span>📁</span>
+                <span>文档管理</span>
+            </a>
+            <a href="#" class="nav-link" data-page="settings">
+                <span>⚙️</span>
+                <span>系统设置</span>
+            </a>
+        </div>
+        <div class="sidebar-footer">
+            RAG Knowledge Base v1.0
+        </div>
+    </nav>
+
+    <div class="main">
+        <div id="page-chat" class="page active">
+            <div class="page-header">
+                <h1>💬 智能问答</h1>
+                <p>向知识库提问，获取基于文档内容的精准回答</p>
+            </div>
+
+            <div class="stats-row" id="stats-bar">
+                <div class="stat-card">
+                    <div class="value" id="stat-chunks">0</div>
+                    <div class="label">知识片段</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="stat-docs">0</div>
+                    <div class="label">文档数量</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="stat-status">未初始化</div>
+                    <div class="label">引擎状态</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="form-group">
+                    <label>输入问题</label>
+                    <textarea id="question-input" rows="3" placeholder="请输入您的问题，例如：RAG是什么？它有什么优势？"></textarea>
+                </div>
+                <div class="row" style="margin-bottom: 16px;">
+                    <div class="form-group">
+                        <label>检索数量</label>
+                        <input type="text" id="top-k-input" value="5" style="width: 100px;">
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-lg" id="query-btn" onclick="doQuery()">
+                    🔍 提问
+                </button>
+            </div>
+
+            <div id="answer-area" style="display:none;">
+                <div class="card">
+                    <div class="card-title">📝 回答</div>
+                    <div class="answer-box" id="answer-content"></div>
+                </div>
+                <div class="card">
+                    <div class="card-title">📄 参考来源</div>
+                    <div class="source-list" id="source-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-docs" class="page">
+            <div class="page-header">
+                <h1>📁 文档管理</h1>
+                <p>指定目录路径，自动扫描并选择文档添加到知识库</p>
+            </div>
+
+            <div class="card">
+                <div class="card-title">🔍 扫描目录</div>
+                <div class="dir-scan-input">
+                    <input type="text" id="dir-path-input" placeholder="输入目录路径，例如：E:\docs 或 ./Doc">
+                    <button class="btn btn-primary" id="scan-btn" onclick="scanDir()">
+                        📂 扫描
+                    </button>
+                </div>
+                <div class="scan-result-info" id="scan-result-info" style="display:none;"></div>
+            </div>
+
+            <div class="card" id="file-table-card" style="display:none;">
+                <div class="card-title">📋 扫描结果</div>
+                <div class="select-all-row">
+                    <input type="checkbox" id="select-all" onchange="toggleSelectAll(this)">
+                    <label for="select-all">全选 / 取消全选</label>
+                    <span style="margin-left:auto;" id="selected-count">已选 0 项</span>
+                </div>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table class="file-table" id="file-table">
+                        <thead>
+                            <tr>
+                                <th class="checkbox-cell">选择</th>
+                                <th>文件名</th>
+                                <th>所在目录</th>
+                                <th>大小 (KB)</th>
+                                <th>格式</th>
+                            </tr>
+                        </thead>
+                        <tbody id="file-table-body"></tbody>
+                    </table>
+                </div>
+                <button class="btn btn-primary" id="add-files-btn" onclick="addSelectedFiles()" style="margin-top:12px;">
+                    🚀 添加到知识库
+                </button>
+            </div>
+
+            <div class="card">
+                <div class="card-title">📂 从默认 Doc 文件夹构建</div>
+                <p style="color:var(--text-secondary); margin-bottom:12px; font-size:14px;">
+                    将文档放入 <code>Doc</code> 文件夹后，点击下方按钮直接构建知识库。
+                </p>
+                <button class="btn btn-primary" id="build-btn" onclick="buildKB()">
+                    🔄 扫描文件夹并构建知识库
+                </button>
+            </div>
+
+            <div class="card">
+                <div class="card-title">📋 已添加文件清单</div>
+                <div style="max-height: 350px; overflow-y: auto;">
+                    <table class="file-table" id="added-file-table">
+                        <thead>
+                            <tr>
+                                <th>文件名</th>
+                                <th>所在目录</th>
+                                <th>大小 (KB)</th>
+                                <th>格式</th>
+                                <th>片段数</th>
+                                <th style="width:60px;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="added-file-tbody">
+                            <tr><td colspan="6" style="text-align:center; color:var(--text-secondary); padding:20px;">暂无已添加文件</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <button class="btn btn-outline" onclick="refreshAddedFiles()" style="margin-top:12px;">
+                    🔄 刷新清单
+                </button>
+            </div>
+        </div>
+
+        <div id="page-settings" class="page">
+            <div class="page-header">
+                <h1>⚙️ 系统设置</h1>
+                <p>管理知识库和引擎配置</p>
+            </div>
+
+            <div class="card">
+                <div class="card-title">🔧 引擎管理</div>
+                <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                    <button class="btn btn-primary" id="init-btn" onclick="initEngine()">
+                        🔌 初始化引擎
+                    </button>
+                    <button class="btn btn-secondary" onclick="refreshStats()">
+                        🔄 刷新状态
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">🗑️ 危险操作</div>
+                <p style="color:var(--text-secondary); margin-bottom:12px; font-size:14px;">
+                    清空知识库将删除所有已索引的文档片段，此操作不可恢复。
+                </p>
+                <button class="btn btn-danger" onclick="clearKB()">
+                    🗑️ 清空知识库
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script>
+        let scannedFiles = [];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            setupNav();
+            refreshStats();
+        });
+
+        function setupNav() {
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                    link.classList.add('active');
+                    const pageName = link.dataset.page;
+                    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                    document.getElementById('page-' + pageName).classList.add('active');
+                    if (pageName === 'chat' || pageName === 'docs') refreshStats();
+                    if (pageName === 'docs') refreshAddedFiles();
+                });
+            });
+        }
+
+        function scanDir() {
+            const dirPath = document.getElementById('dir-path-input').value.trim();
+            if (!dirPath) {
+                toast('请输入目录路径', 'error');
+                return;
+            }
+            const btn = document.getElementById('scan-btn');
+            setLoading(btn, true);
+            fetch('/api/scan-dir', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: dirPath })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    setLoading(btn, false);
+                    if (data.status === 'ok') {
+                        scannedFiles = data.files;
+                        renderFileTable();
+                        document.getElementById('file-table-card').style.display = 'block';
+                        document.getElementById('scan-result-info').style.display = 'block';
+                        document.getElementById('scan-result-info').textContent =
+                            `共找到 ${data.count} 个支持的文件 (PDF/TXT/DOCX)`;
+                        document.getElementById('select-all').checked = true;
+                        updateSelectedCount();
+                    } else {
+                        toast('扫描失败: ' + data.message, 'error');
+                    }
+                })
+                .catch(e => {
+                    setLoading(btn, false);
+                    toast('网络错误', 'error');
+                });
+        }
+
+        function renderFileTable() {
+            const tbody = document.getElementById('file-table-body');
+            tbody.innerHTML = scannedFiles.map((f, i) => `
+                <tr>
+                    <td class="checkbox-cell">
+                        <input type="checkbox" class="file-checkbox" data-index="${i}" checked onchange="updateSelectedCount()">
+                    </td>
+                    <td><strong>${f.name}</strong></td>
+                    <td style="font-size:12px; color:var(--text-secondary);">${f.folder}</td>
+                    <td>${f.size_kb}</td>
+                    <td><span class="ext-badge ${f.ext}">${f.ext}</span></td>
+                </tr>
+            `).join('');
+            document.getElementById('select-all').checked = true;
+            updateSelectedCount();
+        }
+
+        function toggleSelectAll(el) {
+            document.querySelectorAll('.file-checkbox').forEach(cb => cb.checked = el.checked);
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            const checked = document.querySelectorAll('.file-checkbox:checked').length;
+            document.getElementById('selected-count').textContent = `已选 ${checked} 项`;
+        }
+
+        function addSelectedFiles() {
+            const checked = document.querySelectorAll('.file-checkbox:checked');
+            if (checked.length === 0) {
+                toast('请至少选择一个文件', 'error');
+                return;
+            }
+            const paths = [];
+            checked.forEach(cb => {
+                const idx = parseInt(cb.dataset.index);
+                if (scannedFiles[idx]) {
+                    paths.push(scannedFiles[idx].path);
+                }
+            });
+            const btn = document.getElementById('add-files-btn');
+            setLoading(btn, true);
+            fetch('/api/add-files', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths: paths })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    setLoading(btn, false);
+                    if (data.status === 'success') {
+                        toast(`添加成功！${data.chunk_count} 个片段已加入知识库`, 'success');
+                    } else {
+                        toast('添加失败: ' + data.message, 'error');
+                    }
+                    refreshStats();
+                })
+                .catch(e => {
+                    setLoading(btn, false);
+                    toast('网络错误', 'error');
+                });
+        }
+
+        function refreshAddedFiles() {
+            fetch('/api/added-files')
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.getElementById('added-file-tbody');
+                    if (data.status === 'ok' && data.files.length > 0) {
+                        tbody.innerHTML = data.files.map(f => `
+                            <tr>
+                                <td><strong>${f.name}</strong></td>
+                                <td style="font-size:12px; color:var(--text-secondary);">${f.folder}</td>
+                                <td>${f.size_kb}</td>
+                                <td><span class="ext-badge ${f.ext}">${f.ext}</span></td>
+                                <td>${f.chunk_count}</td>
+                                <td><button class="btn btn-outline remove-btn" style="padding:4px 10px; font-size:12px; color:var(--danger); border-color:var(--danger);" data-source="${f.source.replace(/"/g, '&quot;')}" title="移除">✕</button></td>
+                            </tr>
+                        `).join('');
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary); padding:20px;">暂无已添加文件</td></tr>';
+                    }
+                })
+                .catch(e => {
+                    document.getElementById('added-file-tbody').innerHTML =
+                        '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary); padding:20px;">加载失败</td></tr>';
+                });
+        }
+
+        function removeAddedFile(sourcePath) {
+            if (!confirm('确定要从知识库中移除该文件吗？\n\n' + sourcePath)) return;
+            fetch('/api/remove-file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: sourcePath })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        toast('已移除 (' + data.chunk_count + ' 个片段)', 'success');
+                        refreshAddedFiles();
+                        refreshStats();
+                    } else {
+                        toast('移除失败: ' + data.message, 'error');
+                    }
+                })
+                .catch(e => toast('网络错误', 'error'));
+        }
+
+        document.getElementById('added-file-tbody').addEventListener('click', function(e) {
+            const btn = e.target.closest('.remove-btn');
+            if (btn) {
+                const source = btn.getAttribute('data-source');
+                if (source) removeAddedFile(source);
+            }
+        });
+
+        function toast(msg, type) {
+            const c = document.getElementById('toast-container');
+            const div = document.createElement('div');
+            div.className = 'toast ' + type;
+            div.textContent = msg;
+            c.appendChild(div);
+            setTimeout(() => div.remove(), 3000);
+        }
+
+        function setLoading(btn, loading) {
+            if (loading) {
+                btn.disabled = true;
+                btn.dataset.origText = btn.innerHTML;
+                btn.innerHTML = '<span class="spinner"></span> 处理中...';
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = btn.dataset.origText || btn.innerHTML;
+            }
+        }
+
+        function refreshStats() {
+            fetch('/api/stats')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('stat-chunks').textContent = data.chunk_count || 0;
+                    document.getElementById('stat-docs').textContent = data.document_count || 0;
+                    const statusEl = document.getElementById('stat-status');
+                    if (data.initialized && data.chunk_count > 0) {
+                        statusEl.textContent = '✓ 就绪';
+                        statusEl.style.color = 'var(--success)';
+                        document.getElementById('init-btn').disabled = true;
+                    } else if (data.initialized) {
+                        statusEl.textContent = '已初始化';
+                        statusEl.style.color = 'var(--warning)';
+                    } else {
+                        statusEl.textContent = '未初始化';
+                        statusEl.style.color = 'var(--text-secondary)';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('stat-status').textContent = '离线';
+                    document.getElementById('stat-status').style.color = 'var(--danger)';
+                });
+        }
+
+        function initEngine() {
+            const btn = document.getElementById('init-btn');
+            setLoading(btn, true);
+            fetch('/api/init', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    setLoading(btn, false);
+                    if (data.status === 'ok') {
+                        toast('引擎初始化成功！', 'success');
+                    } else {
+                        toast('初始化失败: ' + data.message, 'error');
+                    }
+                    refreshStats();
+                })
+                .catch(e => {
+                    setLoading(btn, false);
+                    toast('网络错误', 'error');
+                });
+        }
+
+        function buildKB() {
+            const btn = document.getElementById('build-btn');
+            setLoading(btn, true);
+            fetch('/api/build', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    setLoading(btn, false);
+                    if (data.status === 'success') {
+                        toast(`构建成功！${data.document_count} 个文档，${data.chunk_count} 个片段`, 'success');
+                    } else {
+                        toast('构建失败: ' + data.message, 'error');
+                    }
+                    refreshStats();
+                })
+                .catch(e => {
+                    setLoading(btn, false);
+                    toast('网络错误', 'error');
+                });
+        }
+
+        function doQuery() {
+            const question = document.getElementById('question-input').value.trim();
+            if (!question) {
+                toast('请输入问题', 'error');
+                return;
+            }
+            const topK = parseInt(document.getElementById('top-k-input').value) || 5;
+            const btn = document.getElementById('query-btn');
+            setLoading(btn, true);
+
+            fetch('/api/query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question: question, top_k: topK })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    setLoading(btn, false);
+                    if (data.status === 'success') {
+                        document.getElementById('answer-area').style.display = 'block';
+                        document.getElementById('answer-content').textContent = data.answer;
+
+                        const sourceList = document.getElementById('source-list');
+                        sourceList.innerHTML = data.sources.map((s, i) =>
+                            `<div class="source-item">
+                                <div class="source-name">[${i + 1}] ${s.source.split('/').pop().split('\\\\').pop()}</div>
+                                <div class="source-content">${s.content.substring(0, 200)}...</div>
+                            </div>`
+                        ).join('');
+                    } else {
+                        toast('查询失败: ' + data.message, 'error');
+                    }
+                    refreshStats();
+                })
+                .catch(e => {
+                    setLoading(btn, false);
+                    toast('网络错误', 'error');
+                });
+        }
+
+        function clearKB() {
+            if (!confirm('确定要清空知识库吗？此操作不可恢复！')) return;
+            fetch('/api/clear', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'ok') {
+                        toast('知识库已清空', 'success');
+                        document.getElementById('answer-area').style.display = 'none';
+                    } else {
+                        toast('清空失败: ' + data.message, 'error');
+                    }
+                    refreshStats();
+                })
+                .catch(e => toast('网络错误', 'error'));
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                doQuery();
+            }
+        });
+    </script>
+</body>
+</html>
