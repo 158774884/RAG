@@ -37,7 +37,8 @@ class RAGEngine:
 
     def _load_sources_from_db(self):
         try:
-            data = self.collection.get(include=["metadatas"])
+            count = self.collection.count()
+            data = self.collection.get(include=["metadatas"], limit=count)
             metas = data.get("metadatas", [])
             self.added_sources = {}
             for meta in metas:
@@ -60,11 +61,11 @@ class RAGEngine:
         if self.cache_version == count and self.doc_cache:
             return
         try:
-            data = self.collection.get(include=["documents", "metadatas"])
+            data = self.collection.get(include=["documents", "metadatas"], limit=count)
             docs = data.get("documents", [])
             metas = data.get("metadatas", [])
             self.doc_cache = [(docs[i], metas[i] if i < len(metas) else {}) for i in range(len(docs))]
-            self.cache_version = count
+            self.cache_version = len(self.doc_cache)
         except Exception:
             pass
 
@@ -81,6 +82,43 @@ class RAGEngine:
                 import docx
                 doc = docx.Document(file_path)
                 return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            elif file_path.endswith(".pptx"):
+                import pptx
+                prs = pptx.Presentation(file_path)
+                texts = []
+                for slide in prs.slides:
+                    for shape in slide.shapes:
+                        if shape.has_text_frame:
+                            for para in shape.text_frame.paragraphs:
+                                t = para.text.strip()
+                                if t:
+                                    texts.append(t)
+                        if shape.has_table:
+                            table = shape.table
+                            for row in table.rows:
+                                row_texts = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                                if row_texts:
+                                    texts.append(" | ".join(row_texts))
+                return "\n".join(texts)
+            elif file_path.endswith(".xlsx"):
+                import openpyxl
+                wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+                texts = []
+                for sheet_name in wb.sheetnames:
+                    ws = wb[sheet_name]
+                    texts.append(f"[Sheet: {sheet_name}]")
+                    row_count = 0
+                    for row in ws.iter_rows(values_only=True):
+                        row_texts = [str(cell).strip() for cell in row if cell is not None and str(cell).strip()]
+                        if row_texts:
+                            texts.append(" | ".join(row_texts))
+                            row_count += 1
+                            if row_count > 500:
+                                texts.append("... (truncated)")
+                                break
+                    texts.append("")
+                wb.close()
+                return "\n".join(texts)
             return None
         except Exception as e:
             print(f"  读取失败 {os.path.basename(file_path)}: {e}")
@@ -144,7 +182,7 @@ class RAGEngine:
 
         docs = self.load_documents(folder_path)
         if not docs:
-            return {"status": "error", "message": "文件夹中没有支持的文档 (PDF/TXT/DOCX)"}
+            return {"status": "error", "message": "文件夹中没有支持的文档 (PDF/TXT/DOCX/PPTX/XLSX)"}
 
         try:
             self.chroma_client.delete_collection("knowledge_base")
@@ -207,7 +245,20 @@ class RAGEngine:
                       'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'do', 'does', 'did',
                       'this', 'that', 'these', 'those', 'to', 'of', 'in', 'for', 'on', 'with', 'and'}
         keywords = [w for w in words if w.lower() not in stop_words]
-        return list(dict.fromkeys(keywords))[:20]
+
+        expanded = list(keywords)
+        for kw in keywords:
+            if len(kw) > 2:
+                for i in range(len(kw) - 1):
+                    bigram = kw[i:i + 2]
+                    if bigram.lower() not in stop_words and len(bigram) >= 2:
+                        expanded.append(bigram)
+
+        result = list(dict.fromkeys(expanded))
+        if not result:
+            chars = re.findall(r'[\u4e00-\u9fff]|[a-zA-Z]+', text)
+            result = [c for c in chars if c.lower() not in stop_words]
+        return result[:30]
 
     def _score_chunk(self, keywords: List[str], chunk: str) -> float:
         score = 0.0
@@ -235,11 +286,20 @@ class RAGEngine:
             if score > 0:
                 scored.append((score, i))
 
+        if not scored:
+            fallback_chars = re.findall(r'[\u4e00-\u9fff]|[a-zA-Z]+', question)
+            fallback_chars = list(dict.fromkeys(fallback_chars))[:10]
+            if fallback_chars:
+                for i, (doc, meta) in enumerate(self.doc_cache):
+                    score = self._score_chunk(fallback_chars, doc)
+                    if score > 0:
+                        scored.append((score * 0.3, i))
+
         scored.sort(key=lambda x: x[0], reverse=True)
         top_results = scored[:top_k]
 
         if not top_results:
-            return {"status": "error", "message": "未找到相关内容"}
+            return {"status": "error", "message": "未找到相关内容，请尝试更换关键词"}
 
         sources = []
         for score, idx in top_results:

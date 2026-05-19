@@ -411,6 +411,8 @@
         .ext-badge.PDF { background: #fee2e2; color: #dc2626; }
         .ext-badge.DOCX { background: #dbeafe; color: #2563eb; }
         .ext-badge.TXT { background: #e0e7ff; color: #4f46e5; }
+        .ext-badge.PPTX { background: #fef3c7; color: #d97706; }
+        .ext-badge.XLSX { background: #dcfce7; color: #16a34a; }
 
         .select-all-row {
             padding: 8px 12px;
@@ -436,6 +438,159 @@
 
         .dir-scan-input input {
             flex: 1;
+        }
+
+        .dir-browser-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .dir-browser-overlay.show {
+            display: flex;
+        }
+
+        .dir-browser {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+            width: 560px;
+            max-height: 480px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .dir-browser-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .dir-browser-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .dir-browser-header .close-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            padding: 0 4px;
+        }
+
+        .dir-browser-header .close-btn:hover { color: var(--text); }
+
+        .dir-browser-nav {
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+
+        .dir-browser-nav .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .dir-browser-nav .breadcrumb a {
+            color: var(--primary);
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .dir-browser-nav .breadcrumb a:hover { text-decoration: underline; }
+
+        .dir-browser-nav .breadcrumb .sep {
+            color: var(--text-secondary);
+            margin: 0 2px;
+        }
+
+        .dir-browser-nav .breadcrumb .current {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .dir-browser-nav .up-btn {
+            background: #e9ecef;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-right: 4px;
+        }
+
+        .dir-browser-nav .up-btn:hover { background: #dde1e5; }
+
+        .dir-browser-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 0;
+            max-height: 300px;
+        }
+
+        .dir-browser-list .dir-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: background 0.15s;
+            border-left: 3px solid transparent;
+        }
+
+        .dir-browser-list .dir-item:hover {
+            background: #f0f4ff;
+            border-left-color: var(--primary);
+        }
+
+        .dir-browser-list .dir-item .dir-icon {
+            font-size: 20px;
+        }
+
+        .dir-browser-list .dir-item .dir-name {
+            font-size: 14px;
+        }
+
+        .dir-browser-list .dir-item.drive-item .dir-name {
+            color: var(--primary);
+            font-weight: 500;
+        }
+
+        .dir-browser-list .empty-hint {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .dir-browser-footer {
+            padding: 14px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dir-browser-footer .selected-path {
+            font-size: 12px;
+            color: var(--text-secondary);
+            max-width: 320px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .scan-result-info {
@@ -538,6 +693,9 @@
                 <div class="card-title">🔍 扫描目录</div>
                 <div class="dir-scan-input">
                     <input type="text" id="dir-path-input" placeholder="输入目录路径，例如：E:\docs 或 ./Doc">
+                    <button class="btn btn-outline" id="browse-btn" onclick="openDirBrowser()">
+                        📁 浏览...
+                    </button>
                     <button class="btn btn-primary" id="scan-btn" onclick="scanDir()">
                         📂 扫描
                     </button>
@@ -572,17 +730,7 @@
             </div>
 
             <div class="card">
-                <div class="card-title">📂 从默认 Doc 文件夹构建</div>
-                <p style="color:var(--text-secondary); margin-bottom:12px; font-size:14px;">
-                    将文档放入 <code>Doc</code> 文件夹后，点击下方按钮直接构建知识库。
-                </p>
-                <button class="btn btn-primary" id="build-btn" onclick="buildKB()">
-                    🔄 扫描文件夹并构建知识库
-                </button>
-            </div>
-
-            <div class="card">
-                <div class="card-title">📋 已添加文件清单</div>
+                <div class="card-title"> 已添加文件清单</div>
                 <div style="max-height: 350px; overflow-y: auto;">
                     <table class="file-table" id="added-file-table">
                         <thead>
@@ -603,6 +751,25 @@
                 <button class="btn btn-outline" onclick="refreshAddedFiles()" style="margin-top:12px;">
                     🔄 刷新清单
                 </button>
+            </div>
+        </div>
+
+        <div class="dir-browser-overlay" id="dir-browser-overlay" onclick="if(event.target===this) closeDirBrowser()">
+            <div class="dir-browser">
+                <div class="dir-browser-header">
+                    <h3>📁 选择目录</h3>
+                    <button class="close-btn" onclick="closeDirBrowser()">&times;</button>
+                </div>
+                <div class="dir-browser-nav" id="dir-browser-nav"></div>
+                <div class="dir-browser-list" id="dir-browser-list">
+                    <div class="empty-hint">加载中...</div>
+                </div>
+                <div class="dir-browser-footer">
+                    <span class="selected-path" id="dir-browser-selected">未选择</span>
+                    <button class="btn btn-primary" id="dir-browser-confirm" onclick="confirmDirSelection()" disabled>
+                        ✓ 确认选择
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -683,7 +850,7 @@
                         document.getElementById('file-table-card').style.display = 'block';
                         document.getElementById('scan-result-info').style.display = 'block';
                         document.getElementById('scan-result-info').textContent =
-                            `共找到 ${data.count} 个支持的文件 (PDF/TXT/DOCX)`;
+                            `共找到 ${data.count} 个支持的文件 (PDF/TXT/DOCX/PPTX/XLSX)`;
                         document.getElementById('select-all').checked = true;
                         updateSelectedCount();
                     } else {
@@ -959,6 +1126,109 @@
                 doQuery();
             }
         });
+
+        let dirBrowserPath = '';
+        let dirBrowserSelectedPath = '';
+
+        function openDirBrowser() {
+            dirBrowserPath = '';
+            dirBrowserSelectedPath = '';
+            document.getElementById('dir-browser-overlay').classList.add('show');
+            document.getElementById('dir-browser-confirm').disabled = true;
+            document.getElementById('dir-browser-selected').textContent = '未选择';
+            loadDirList('');
+        }
+
+        function closeDirBrowser() {
+            document.getElementById('dir-browser-overlay').classList.remove('show');
+        }
+
+        function loadDirList(path) {
+            const listEl = document.getElementById('dir-browser-list');
+            listEl.innerHTML = '<div class="empty-hint">加载中...</div>';
+
+            fetch('/api/list-dirs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: path })
+            })
+                .then(r => {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(data => {
+                    if (data.status !== 'ok') {
+                        listEl.innerHTML = `<div class="empty-hint">加载失败: ${data.message}</div>`;
+                        return;
+                    }
+
+                    dirBrowserPath = data.current;
+                    renderBreadcrumb(data.parent, data.current);
+
+                    if (data.items.length === 0) {
+                        listEl.innerHTML = '<div class="empty-hint">此目录下没有子文件夹</div>';
+                    } else {
+                        listEl.innerHTML = data.items.map(item => {
+                            const icon = item.type === 'drive' ? '💾' : '📁';
+                            const cls = item.type === 'drive' ? 'dir-item drive-item' : 'dir-item';
+                            const safePath = item.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                            return `<div class="${cls}" data-path="${item.path}" onclick="navigateTo('${safePath}')">
+                                <span class="dir-icon">${icon}</span>
+                                <span class="dir-name">${item.name}</span>
+                            </div>`;
+                        }).join('');
+                    }
+                })
+                .catch(e => {
+                    console.error('list-dirs error:', e);
+                    listEl.innerHTML = `<div class="empty-hint">网络错误: ${e.message}<br><small>请确认服务器运行在 http://127.0.0.1:5000</small></div>`;
+                });
+        }
+
+        function renderBreadcrumb(parent, current) {
+            const navEl = document.getElementById('dir-browser-nav');
+            if (!current) {
+                navEl.innerHTML = '<span style="color:var(--text-secondary);">请选择驱动器</span>';
+                return;
+            }
+
+            let html = '';
+            if (parent) {
+                const safeParent = parent.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                html += `<button class="up-btn" onclick="navigateTo('${safeParent}')">⬆ 上级</button>`;
+            }
+
+            const parts = current.replace(/\\/g, '/').split('/').filter(p => p);
+            html += '<div class="breadcrumb">';
+            let accumulated = '';
+            for (let i = 0; i < parts.length; i++) {
+                const isFirst = i === 0;
+                accumulated = isFirst ? parts[i] : accumulated + '/' + parts[i];
+                if (i < parts.length - 1) {
+                    const safeAcc = accumulated.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    html += `<a onclick="navigateTo('${safeAcc}')">${isFirst ? parts[i] : parts[i]}</a>`;
+                    html += '<span class="sep">/</span>';
+                } else {
+                    html += `<span class="current">${parts[i]}</span>`;
+                }
+            }
+            html += '</div>';
+            navEl.innerHTML = html;
+        }
+
+        function navigateTo(path) {
+            dirBrowserSelectedPath = path;
+            document.getElementById('dir-browser-selected').textContent = path;
+            document.getElementById('dir-browser-confirm').disabled = false;
+            loadDirList(path);
+        }
+
+        function confirmDirSelection() {
+            if (dirBrowserSelectedPath) {
+                document.getElementById('dir-path-input').value = dirBrowserSelectedPath;
+            }
+            closeDirBrowser();
+        }
     </script>
 </body>
 </html>
