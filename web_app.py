@@ -6,7 +6,7 @@ import shutil
 from flask import Flask, request, jsonify, render_template
 from werkzeug.utils import secure_filename
 from rag_engine import RAGEngine
-from config import DOCUMENT_FOLDER, TOP_K
+from config import DOCUMENT_FOLDER, TOP_K, SERVER_PORT
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
@@ -106,6 +106,59 @@ def api_clear():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/list-dirs', methods=['POST'])
+def api_list_dirs():
+    try:
+        data = request.get_json()
+        dir_path = data.get('path', '').strip()
+
+        if not dir_path:
+            drives = []
+            for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+                d = letter + ':\\'
+                if os.path.exists(d):
+                    label = d
+                    try:
+                        import ctypes
+                        buf = ctypes.create_unicode_buffer(128)
+                        ctypes.windll.kernel32.GetVolumeInformationW(d, buf, 128, None, None, None, None, 0)
+                        vol_name = buf.value
+                        if vol_name:
+                            label = f'{d} ({vol_name})'
+                    except Exception:
+                        pass
+                    drives.append({'name': label, 'path': d.replace('\\', '/'), 'type': 'drive'})
+            return jsonify({'status': 'ok', 'parent': None, 'current': '', 'items': drives})
+
+        dir_path = os.path.normpath(dir_path)
+
+        parent = os.path.dirname(dir_path)
+        if parent == dir_path:
+            parent = None
+
+        items = []
+        try:
+            entries = sorted(os.listdir(dir_path), key=lambda x: x.lower())
+            for name in entries:
+                full = os.path.join(dir_path, name)
+                if os.path.isdir(full) and not name.startswith('.'):
+                    items.append({
+                        'name': name,
+                        'path': full.replace('\\', '/'),
+                        'type': 'dir'
+                    })
+        except PermissionError:
+            pass
+
+        return jsonify({
+            'status': 'ok',
+            'parent': parent.replace('\\', '/') if parent else None,
+            'current': dir_path.replace('\\', '/'),
+            'items': items
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/scan-dir', methods=['POST'])
 def api_scan_dir():
     try:
@@ -116,7 +169,7 @@ def api_scan_dir():
         if not os.path.isdir(dir_path):
             return jsonify({'status': 'error', 'message': '目录不存在'}), 400
 
-        allowed_ext = {'.pdf', '.txt', '.docx'}
+        allowed_ext = {'.pdf', '.txt', '.docx', '.pptx', '.xlsx'}
         files = []
         for root, dirs, filenames in os.walk(dir_path):
             for fname in filenames:
@@ -186,4 +239,41 @@ def api_remove_file():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    import argparse
+    parser = argparse.ArgumentParser(description='RAG 知识库服务')
+    parser.add_argument('--port', type=int, default=SERVER_PORT,
+                        help=f'服务端口号 (默认: {SERVER_PORT})')
+    args = parser.parse_args()
+
+    PORT = args.port
+
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(0.5)
+    if sock.connect_ex(('127.0.0.1', PORT)) == 0:
+        sock.close()
+        print(f"\n⚠ 端口 {PORT} 被占用，正在清理...")
+        import subprocess, time
+        result = subprocess.run(
+            f'cmd /c "netstat -ano | findstr :{PORT}"',
+            capture_output=True, text=True, shell=True
+        )
+        killed = set()
+        for line in result.stdout.strip().split('\n'):
+            parts = line.strip().split()
+            for i, p in enumerate(parts):
+                if f':{PORT}' in p and i + 1 < len(parts):
+                    pid = parts[-1]
+                    if pid.isdigit() and pid not in killed:
+                        killed.add(pid)
+                        subprocess.run(f'cmd /c taskkill /F /PID {pid}',
+                                       capture_output=True, shell=True)
+                        print(f"  已终止 PID={pid}")
+        time.sleep(1.5)
+        print()
+    else:
+        sock.close()
+
+    print(f"启动服务: http://127.0.0.1:{PORT}")
+    print(f"配置文件端口: {SERVER_PORT}, 实际端口: {PORT}")
+    app.run(host='0.0.0.0', port=PORT, debug=False, threaded=True)
