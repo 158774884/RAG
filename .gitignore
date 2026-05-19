@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ChromaDB 向量数据库（运行时自动生成）
+chroma_db/
+
+# Flask 依赖库（通过 pip install -r requirements.txt 安装）
+libs/
+
+# 上传文件临时目录
+uploads/
+
+# 日志
+*.log
+
+# VS Code
+.vscode/
+
+# 备份
+RAG_backup/
+RAG_temp/
