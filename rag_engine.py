@@ -6,8 +6,12 @@ os.environ['MKL_NUM_THREADS'] = '1'
 import shutil
 import re
 import uuid
+import json
 from typing import List, Dict, Optional
-from config import DOCUMENT_FOLDER, VECTOR_DB_PATH, CHUNK_SIZE, CHUNK_OVERLAP, TOP_K
+from config import (DOCUMENT_FOLDER, VECTOR_DB_PATH, CHUNK_SIZE, CHUNK_OVERLAP,
+                    TOP_K, LLM_ENABLED, LLM_TYPE, LLM_MODEL, LLM_API_KEY,
+                    LLM_BASE_URL, LLM_LOCAL_URL, LLM_LOCAL_MODEL,
+                    LLM_CONFIG_FILE, LLM_PRESETS)
 
 
 class RAGEngine:
@@ -16,6 +20,14 @@ class RAGEngine:
         self.added_sources = {}
         self.doc_cache = []
         self.cache_version = -1
+        self.llm_enabled = LLM_ENABLED
+        self.llm_type = LLM_TYPE
+        self.llm_model = LLM_MODEL
+        self.llm_api_key = LLM_API_KEY
+        self.llm_base_url = LLM_BASE_URL
+        self.llm_local_url = LLM_LOCAL_URL
+        self.llm_local_model = LLM_LOCAL_MODEL
+        self._load_llm_config()
 
     def initialize(self, device: str = "cpu"):
         import chromadb
@@ -288,6 +300,12 @@ class RAGEngine:
 
         if not scored:
             fallback_chars = re.findall(r'[\u4e00-\u9fff]|[a-zA-Z]+', question)
+            stop_words = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上',
+                          '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己',
+                          '这', '他', '她', '它', '们', '那', '什么', '怎么', '如何', '可以', '这个', '那个',
+                          'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'do', 'does', 'did',
+                          'this', 'that', 'these', 'those', 'to', 'of', 'in', 'for', 'on', 'with', 'and'}
+            fallback_chars = [c for c in fallback_chars if c.lower() not in stop_words]
             fallback_chars = list(dict.fromkeys(fallback_chars))[:10]
             if fallback_chars:
                 for i, (doc, meta) in enumerate(self.doc_cache):
@@ -298,7 +316,17 @@ class RAGEngine:
         scored.sort(key=lambda x: x[0], reverse=True)
         top_results = scored[:top_k]
 
-        if not top_results:
+        best_score = top_results[0][0] if top_results else 0
+        if not top_results or best_score < 5.0:
+            print(f"[Query] 本地搜索结果不足 (最高分={best_score:.1f}), llm_enabled={self.llm_enabled}, type={self.llm_type}, has_key={bool(self.llm_api_key)}")
+            if self.llm_enabled and self.llm_type == "online" and self.llm_api_key:
+                answer = self._generate_answer_from_web(question)
+                return {
+                    "status": "success",
+                    "answer": answer,
+                    "sources": [],
+                    "from_web": True
+                }
             return {"status": "error", "message": "未找到相关内容，请尝试更换关键词"}
 
         sources = []
@@ -310,7 +338,19 @@ class RAGEngine:
                 "score": score
             })
 
-        answer = self._generate_answer(question, sources, keywords)
+        if self.llm_enabled and self.llm_type == "online" and self.llm_api_key and best_score < 20.0:
+            print(f"[Query] 本地匹配较弱 (最高分={best_score:.1f}), 增强联网搜索")
+            web_info = self._search_web(question)
+            if web_info:
+                answer = self._generate_answer_llm_with_web(question, sources, web_info)
+                return {
+                    "status": "success",
+                    "answer": answer,
+                    "sources": sources,
+                    "from_web": True
+                }
+
+        answer = self._generate_answer(question, sources, keywords) if not self.llm_enabled else self._generate_answer_llm(question, sources, keywords)
         return {"status": "success", "answer": answer, "sources": sources}
 
     def _generate_answer(self, question: str, sources: List[Dict], keywords: List[str]) -> str:
@@ -346,6 +386,294 @@ class RAGEngine:
         source_files = list(dict.fromkeys(os.path.basename(s["source"]) for s in sources))
         answer += f"\n\n参考文件: {', '.join(source_files[:3])}"
 
+        return answer
+
+    def _load_llm_config(self):
+        try:
+            if os.path.exists(LLM_CONFIG_FILE):
+                with open(LLM_CONFIG_FILE, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                if saved.get("enabled") is not None:
+                    self.llm_enabled = saved["enabled"]
+                if saved.get("type"):
+                    self.llm_type = saved["type"]
+                if saved.get("model"):
+                    self.llm_model = saved["model"]
+                if saved.get("api_key"):
+                    self.llm_api_key = saved["api_key"]
+                if saved.get("base_url"):
+                    self.llm_base_url = saved["base_url"]
+                if saved.get("local_url"):
+                    self.llm_local_url = saved["local_url"]
+                if saved.get("local_model"):
+                    self.llm_local_model = saved["local_model"]
+                print(f"[LLM] 已加载配置: enabled={self.llm_enabled}, type={self.llm_type}, model={self.llm_model}, base_url={self.llm_base_url}")
+        except Exception as e:
+            print(f"[LLM] 加载配置失败: {e}")
+
+    def _save_llm_config(self):
+        try:
+            saved = {
+                "enabled": self.llm_enabled,
+                "type": self.llm_type,
+                "model": self.llm_model,
+                "api_key": self.llm_api_key,
+                "base_url": self.llm_base_url,
+                "local_url": self.llm_local_url,
+                "local_model": self.llm_local_model,
+            }
+            with open(LLM_CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(saved, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[LLM] 保存配置失败: {e}")
+
+    def update_llm_config(self, config: Dict):
+        if "enabled" in config:
+            self.llm_enabled = config["enabled"]
+        if "type" in config:
+            self.llm_type = config["type"]
+        if "model" in config:
+            self.llm_model = config["model"]
+        if "api_key" in config and config["api_key"]:
+            self.llm_api_key = config["api_key"]
+        if "base_url" in config:
+            self.llm_base_url = config["base_url"]
+        if "local_url" in config:
+            self.llm_local_url = config["local_url"]
+        if "local_model" in config:
+            self.llm_local_model = config["local_model"]
+        self._save_llm_config()
+        print(f"[LLM] 配置已保存: enabled={self.llm_enabled}, type={self.llm_type}, model={self.llm_model}")
+
+    def get_llm_config(self) -> Dict:
+        return {
+            "enabled": self.llm_enabled,
+            "type": self.llm_type,
+            "model": self.llm_model,
+            "api_key": "***" if self.llm_api_key else "",
+            "has_api_key": bool(self.llm_api_key),
+            "base_url": self.llm_base_url,
+            "local_url": self.llm_local_url,
+            "local_model": self.llm_local_model
+        }
+
+    def get_llm_presets(self) -> List[Dict]:
+        return list(LLM_PRESETS)
+
+    def _generate_answer_llm(self, question: str, sources: List[Dict],
+                             keywords: List[str]) -> str:
+        context = ""
+        for i, src in enumerate(sources[:5]):
+            context += f"[来源{i + 1}: {os.path.basename(src['source'])}]\n{src['content'][:600]}\n\n"
+
+        prompt = (
+            "你是一个知识库问答助手。请按以下优先级回答用户问题：\n"
+            "1）如果参考资料与问题相关，优先基于资料回答；\n"
+            "2）如果参考资料与问题无关，请根据你自身的知识直接回答。\n\n"
+            f"=== 参考资料 ===\n{context}\n"
+            f"=== 用户问题 ===\n{question}\n\n"
+            "请用中文回答："
+        )
+
+        if self.llm_type == "local":
+            return self._call_local_llm(prompt, sources)
+        else:
+            return self._call_online_llm(prompt, sources)
+
+    def _call_online_llm(self, prompt: str, sources: List[Dict]) -> str:
+        try:
+            import urllib.request
+            import urllib.error
+
+            payload = json.dumps({
+                "model": self.llm_model,
+                "messages": [
+                    {"role": "system", "content": "你是一个智能问答助手，基于提供的参考资料或实时信息如实回答。"},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.3,
+                "max_tokens": 2000
+            }).encode("utf-8")
+
+            url = f"{self.llm_base_url}/chat/completions"
+            print(f"[LLM] 调用在线模型: {url}")
+            print(f"[LLM] 模型: {self.llm_model}, Key: {self.llm_api_key[:8]}...")
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.llm_api_key}"
+            }
+            req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                answer = result["choices"][0]["message"]["content"]
+                print(f"[LLM] 在线模型返回成功，长度: {len(answer)}")
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            print(f"[LLM] HTTP错误 {e.code}: {body}")
+            return f"[大模型调用失败: HTTP {e.code}]\n\n{body[:300]}\n\n已切换为原文摘抄模式。\n\n" + self._generate_answer_legacy(sources)
+        except Exception as e:
+            print(f"[LLM] 异常: {e}")
+            return f"[大模型调用失败: {e}]\n\n已切换为原文摘抄模式。\n\n" + self._generate_answer_legacy(sources)
+
+        source_files = list(dict.fromkeys(os.path.basename(s["source"]) for s in sources))
+        answer += f"\n\n📄 参考文件: {', '.join(source_files[:5])}"
+        return answer
+
+    def _call_local_llm(self, prompt: str, sources: List[Dict]) -> str:
+        try:
+            import urllib.request
+            import urllib.error
+
+            payload = json.dumps({
+                "model": self.llm_local_model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": 0.3}
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                self.llm_local_url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                answer = result.get("response", "")
+        except Exception as e:
+            return f"[本地模型调用失败: {e}]\n\n请确认 Ollama 已启动且模型已下载。\n\n" + self._generate_answer_legacy(sources)
+
+        source_files = list(dict.fromkeys(os.path.basename(s["source"]) for s in sources))
+        answer += f"\n\n📄 参考文件: {', '.join(source_files[:5])}"
+        return answer
+
+    def _generate_answer_llm_with_web(self, question: str, sources: List[Dict],
+                                       web_info: str) -> str:
+        context = ""
+        for i, src in enumerate(sources[:3]):
+            context += f"[本地{i + 1}: {os.path.basename(src['source'])}]\n{src['content'][:400]}\n\n"
+
+        prompt = (
+            "你是一个知识库问答助手。以下是本地知识库和实时网络搜索的结果，请综合回答用户问题。\n"
+            "优先使用实时网络信息回答，本地资料作为补充参考。\n\n"
+            f"=== 本地资料 ===\n{context}\n"
+            f"=== 实时网络搜索结果 ===\n{web_info}\n\n"
+            f"=== 用户问题 ===\n{question}\n\n"
+            "请用中文回答："
+        )
+
+        return self._call_online_llm(prompt, sources)
+
+    def _generate_answer_legacy(self, sources: List[Dict]) -> str:
+        answer_parts = []
+        for src in sources[:3]:
+            sentences = re.split(r'[。！？\n]', src["content"])
+            sentences = [s.strip() for s in sentences if len(s.strip()) > 5]
+            if sentences:
+                answer_parts.append(sentences[0][:300])
+
+        answer = "。\n".join(answer_parts)
+        source_files = list(dict.fromkeys(os.path.basename(s["source"]) for s in sources))
+        answer += f"\n\n📄 参考文件: {', '.join(source_files[:5])}"
+        return answer
+
+    def _search_web(self, query: str) -> str:
+        try:
+            import urllib.request
+            import urllib.parse
+            import html as html_module
+
+            search_url = "https://lite.duckduckgo.com/lite/?" + urllib.parse.urlencode({"q": query})
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            req = urllib.request.Request(search_url, headers=headers)
+
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+
+            results = []
+            for match in re.finditer(r'<a[^>]*class="result-link"[^>]*href="([^"]*)"[^>]*>([^<]*)</a>', raw):
+                url = match.group(1)
+                title = match.group(2).strip()
+                results.append({"title": title, "url": url, "snippet": ""})
+
+            snippets = re.findall(r'<td class="result-snippet"[^>]*>(.*?)</td>', raw, re.DOTALL)
+            for i, s in enumerate(snippets):
+                if i < len(results):
+                    clean = re.sub(r'<[^>]+>', '', s).strip()
+                    results[i]["snippet"] = html_module.unescape(clean)
+
+            print(f"[WebSearch] DuckDuckGo 搜索 '{query}' 得到 {len(results)} 条结果")
+            if results:
+                lines = []
+                for r in results[:5]:
+                    lines.append(f"- [{r['title']}]({r['url']})\n  {r['snippet']}")
+                return "\n\n".join(lines)
+            return ""
+        except Exception as e:
+            print(f"[WebSearch] 搜索失败: {e}")
+            return ""
+
+    def _generate_answer_from_web(self, question: str) -> str:
+        web_results = self._search_web(question)
+
+        if web_results:
+            prompt = (
+                "你是一个智能问答助手。以下是实时搜索到的网页信息，请根据这些信息回答用户问题。\n"
+                "要求：基于搜索结果作答，引用相关信息。如果搜索结果不足以回答问题，请如实说明。\n\n"
+                f"=== 搜索结果 ===\n{web_results}\n\n"
+                f"=== 用户问题 ===\n{question}\n\n"
+                "请用中文回答："
+            )
+        else:
+            prompt = (
+                "你是一个智能问答助手。用户的问题在本地知识库中未找到匹配内容，"
+                "且网络搜索暂时不可用。请根据你自身的知识回答以下问题。\n"
+                "要求：如实作答，如果确实不知道请说明，不要编造信息。\n\n"
+                f"=== 用户问题 ===\n{question}\n\n"
+                "请用中文回答："
+            )
+
+        try:
+            import urllib.request
+            import urllib.error
+
+            payload = json.dumps({
+                "model": self.llm_model,
+                "messages": [
+                    {"role": "system", "content": "你是一个智能问答助手，基于实时信息或自身知识如实回答用户问题。"},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.5,
+                "max_tokens": 2000
+            }).encode("utf-8")
+
+            url = f"{self.llm_base_url}/chat/completions"
+            print(f"[Web] 联网回答调用: {url}")
+            print(f"[Web] 模型: {self.llm_model}")
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.llm_api_key}"
+            }
+            req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                answer = result["choices"][0]["message"]["content"]
+                print(f"[Web] 联网回答成功，长度: {len(answer)}")
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            print(f"[Web] HTTP错误 {e.code}: {body}")
+            return f"[联网检索失败: HTTP {e.code}]\n\n{body[:300]}"
+        except Exception as e:
+            print(f"[Web] 异常: {e}")
+            return f"[联网检索失败: {e}]\n\n请检查网络连接和大模型 API 配置。"
+
+        if web_results:
+            answer += "\n\n🌐 回答来源: 实时网络搜索 + 大模型总结"
+        else:
+            answer += "\n\n🌐 回答来源: 大模型自身知识（网络搜索不可用）"
         return answer
 
     def get_db_stats(self) -> Dict:

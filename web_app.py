@@ -6,7 +6,7 @@ import shutil
 from flask import Flask, request, jsonify, render_template
 from werkzeug.utils import secure_filename
 from rag_engine import RAGEngine
-from config import DOCUMENT_FOLDER, TOP_K, SERVER_PORT
+from config import DOCUMENT_FOLDER, TOP_K, SERVER_PORT, LLM_ENABLED, LLM_TYPE, LLM_MODEL, LLM_API_KEY, LLM_BASE_URL, LLM_LOCAL_URL, LLM_LOCAL_MODEL
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
@@ -235,6 +235,39 @@ def api_remove_file():
             return jsonify({'status': 'error', 'message': '请指定文件路径'}), 400
         result = rag.remove_document(path)
         return jsonify(result)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/llm-config', methods=['GET'])
+def api_get_llm_config():
+    try:
+        if not rag.initialized:
+            rag.initialize(device='cpu')
+        config = rag.get_llm_config()
+        return jsonify({'status': 'ok', 'config': config})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/llm-config', methods=['POST'])
+def api_update_llm_config():
+    try:
+        if not rag.initialized:
+            rag.initialize(device='cpu')
+        data = request.get_json()
+        rag.update_llm_config(data)
+        config = rag.get_llm_config()
+        return jsonify({'status': 'ok', 'config': config, 'message': '大模型配置已更新'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/llm-presets', methods=['GET'])
+def api_get_llm_presets():
+    try:
+        if not rag.initialized:
+            rag.initialize(device='cpu')
+        presets = rag.get_llm_presets()
+        current_config = rag.get_llm_config()
+        return jsonify({'status': 'ok', 'presets': presets, 'current': current_config})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 

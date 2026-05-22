@@ -593,6 +593,95 @@
             white-space: nowrap;
         }
 
+        .llm-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .llm-status.on { background: #dcfce7; color: #16a34a; }
+        .llm-status.off { background: #fef2f2; color: #dc2626; }
+
+        .llm-toggle {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 26px;
+        }
+
+        .llm-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .llm-toggle .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc;
+            transition: 0.3s;
+            border-radius: 26px;
+        }
+
+        .llm-toggle .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        .llm-toggle input:checked + .slider {
+            background-color: var(--primary);
+        }
+
+        .llm-toggle input:checked + .slider:before {
+            transform: translateX(22px);
+        }
+
+        .llm-type-radio {
+            display: flex;
+            gap: 12px;
+        }
+
+        .llm-type-radio label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .llm-type-radio label:hover { border-color: var(--primary); }
+        .llm-type-radio input:checked + span { color: var(--primary); font-weight: 600; }
+        .llm-type-radio label:has(input:checked) { border-color: var(--primary); background: rgba(79,110,247,0.05); }
+
+        .llm-hint {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .llm-hint code {
+            background: #f0f2f5;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+
         .scan-result-info {
             margin-top: 12px;
             font-size: 13px;
@@ -792,6 +881,80 @@
             </div>
 
             <div class="card">
+                <div class="card-title">🤖 大模型配置</div>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+                    <span style="font-size:14px;">启用大模型生成回答</span>
+                    <label class="llm-toggle">
+                        <input type="checkbox" id="llm-enabled" onchange="onLlmToggle(this)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div id="llm-settings" style="display:none;">
+
+                    <div class="form-group">
+                        <label>模型类型</label>
+                        <div class="llm-type-radio">
+                            <label>
+                                <input type="radio" name="llm-type" value="online" onchange="onLlmTypeChange()">
+                                <span>☁️ 在线大模型</span>
+                            </label>
+                            <label>
+                                <input type="radio" name="llm-type" value="local" onchange="onLlmTypeChange()">
+                                <span>💻 本地模型</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="llm-online-config">
+                        <div class="form-group">
+                            <label>模型提供商</label>
+                            <select id="llm-provider" onchange="onLlmProviderChange()" style="width:100%;">
+                                <option value="">加载中...</option>
+                            </select>
+                            <div class="llm-hint">选择预设提供商，或选"自定义"手动输入</div>
+                        </div>
+                        <div class="form-group">
+                            <label>API Base URL</label>
+                            <input type="text" id="llm-base-url" placeholder="https://api.deepseek.com">
+                            <div class="llm-hint" id="llm-base-url-hint">自动填充，也可手动修改</div>
+                        </div>
+                        <div class="form-group">
+                            <label>模型名称</label>
+                            <input type="text" id="llm-model" placeholder="deepseek-chat">
+                            <div class="llm-hint">如: <code>deepseek-chat</code>、<code>qwen-turbo</code>、<code>gpt-4o</code></div>
+                        </div>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="password" id="llm-api-key" placeholder="sk-...">
+                        </div>
+                    </div>
+
+                    <div id="llm-local-config" style="display:none;">
+                        <div class="form-group">
+                            <label>Ollama 服务地址</label>
+                            <input type="text" id="llm-local-url" placeholder="http://localhost:11434/api/generate">
+                            <div class="llm-hint">默认 Ollama 地址，请确保已启动 <code>ollama serve</code></div>
+                        </div>
+                        <div class="form-group">
+                            <label>模型名称</label>
+                            <input type="text" id="llm-local-model" placeholder="qwen2.5:7b">
+                            <div class="llm-hint">如: <code>qwen2.5:7b</code>、<code>deepseek-r1:8b</code>、<code>llama3:8b</code></div>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary" id="llm-save-btn" onclick="saveLlmConfig()">
+                        💾 保存配置
+                    </button>
+                    <span id="llm-save-status" style="margin-left:12px; font-size:13px;"></span>
+                </div>
+
+                <div id="llm-disabled-hint" style="margin-top:12px; font-size:13px; color:var(--text-secondary);">
+                    当前使用 <strong>关键词匹配 + 原文摘抄</strong> 模式生成回答
+                </div>
+            </div>
+
+            <div class="card">
                 <div class="card-title">🗑️ 危险操作</div>
                 <p style="color:var(--text-secondary); margin-bottom:12px; font-size:14px;">
                     清空知识库将删除所有已索引的文档片段，此操作不可恢复。
@@ -824,6 +987,7 @@
                     document.getElementById('page-' + pageName).classList.add('active');
                     if (pageName === 'chat' || pageName === 'docs') refreshStats();
                     if (pageName === 'docs') refreshAddedFiles();
+                    if (pageName === 'settings') fetchLlmConfig();
                 });
             });
         }
@@ -1088,12 +1252,21 @@
                         document.getElementById('answer-content').textContent = data.answer;
 
                         const sourceList = document.getElementById('source-list');
-                        sourceList.innerHTML = data.sources.map((s, i) =>
-                            `<div class="source-item">
-                                <div class="source-name">[${i + 1}] ${s.source.split('/').pop().split('\\\\').pop()}</div>
-                                <div class="source-content">${s.content.substring(0, 200)}...</div>
-                            </div>`
-                        ).join('');
+                        if (data.from_web) {
+                            sourceList.innerHTML = '<div class="source-item" style="border-color: var(--warning); background: #fffbeb;">' +
+                                '<div class="source-name" style="color: var(--warning);">🌐 大模型联网回答</div>' +
+                                '<div class="source-content">本地知识库未找到匹配内容，已自动调用大模型基于自身知识回答</div>' +
+                                '</div>';
+                        } else if (data.sources && data.sources.length > 0) {
+                            sourceList.innerHTML = data.sources.map((s, i) =>
+                                `<div class="source-item">
+                                    <div class="source-name">[${i + 1}] ${s.source.split('/').pop().split('\\\\').pop()}</div>
+                                    <div class="source-content">${s.content.substring(0, 200)}...</div>
+                                </div>`
+                            ).join('');
+                        } else {
+                            sourceList.innerHTML = '<div class="source-item"><div class="source-content">无参考来源</div></div>';
+                        }
                     } else {
                         toast('查询失败: ' + data.message, 'error');
                     }
@@ -1126,6 +1299,132 @@
                 doQuery();
             }
         });
+
+        function fetchLlmConfig() {
+            fetch('/api/llm-presets')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'ok') {
+                        applyPresets(data.presets);
+                        applyLlmConfig(data.current);
+                    }
+                })
+                .catch(e => console.error('加载大模型配置失败', e));
+        }
+
+        let llmPresets = [];
+
+        function applyPresets(presets) {
+            llmPresets = presets;
+            const sel = document.getElementById('llm-provider');
+            sel.innerHTML = presets.map((p, i) =>
+                `<option value="${i}">${p.name}</option>`
+            ).join('');
+        }
+
+        function applyLlmConfig(config) {
+            document.getElementById('llm-enabled').checked = config.enabled;
+            document.getElementById('llm-settings').style.display = config.enabled ? 'block' : 'none';
+            document.getElementById('llm-disabled-hint').style.display = config.enabled ? 'none' : 'block';
+
+            const typeRadios = document.getElementsByName('llm-type');
+            typeRadios.forEach(r => r.checked = (r.value === config.type));
+
+            const baseUrl = config.base_url || '';
+            document.getElementById('llm-base-url').value = baseUrl;
+            document.getElementById('llm-model').value = config.model || '';
+            document.getElementById('llm-api-key').value = '';
+            if (config.has_api_key) {
+                document.getElementById('llm-api-key').placeholder = '已有密钥（留空则不修改）';
+            } else {
+                document.getElementById('llm-api-key').placeholder = 'sk-...';
+            }
+
+            document.getElementById('llm-local-url').value = config.local_url || '';
+            document.getElementById('llm-local-model').value = config.local_model || '';
+
+            let matchedIdx = -1;
+            for (let i = 0; i < llmPresets.length; i++) {
+                if (llmPresets[i].base_url && llmPresets[i].base_url === baseUrl) {
+                    matchedIdx = i;
+                    break;
+                }
+            }
+            if (matchedIdx >= 0) {
+                document.getElementById('llm-provider').value = matchedIdx;
+            } else if (baseUrl) {
+                document.getElementById('llm-provider').value = llmPresets.length - 1;
+            }
+
+            onLlmTypeChange();
+        }
+
+        function onLlmProviderChange() {
+            const idx = parseInt(document.getElementById('llm-provider').value);
+            if (idx >= 0 && idx < llmPresets.length - 1) {
+                const preset = llmPresets[idx];
+                document.getElementById('llm-base-url').value = preset.base_url || '';
+                document.getElementById('llm-model').value = preset.model || '';
+                document.getElementById('llm-base-url-hint').textContent = '已自动填充';
+            } else if (idx === llmPresets.length - 1) {
+                document.getElementById('llm-base-url-hint').textContent = '请输入自定义 API 地址';
+                document.getElementById('llm-base-url').focus();
+            }
+        }
+
+        function onLlmToggle(el) {
+            const enabled = el.checked;
+            document.getElementById('llm-settings').style.display = enabled ? 'block' : 'none';
+            document.getElementById('llm-disabled-hint').style.display = enabled ? 'none' : 'block';
+        }
+
+        function onLlmTypeChange() {
+            const type = document.querySelector('input[name="llm-type"]:checked').value;
+            document.getElementById('llm-online-config').style.display = type === 'online' ? 'block' : 'none';
+            document.getElementById('llm-local-config').style.display = type === 'local' ? 'block' : 'none';
+        }
+
+        function saveLlmConfig() {
+            const apiKey = document.getElementById('llm-api-key').value.trim();
+            const config = {
+                enabled: document.getElementById('llm-enabled').checked,
+                type: document.querySelector('input[name="llm-type"]:checked').value,
+                model: document.getElementById('llm-model').value.trim(),
+                base_url: document.getElementById('llm-base-url').value.trim(),
+                local_url: document.getElementById('llm-local-url').value.trim(),
+                local_model: document.getElementById('llm-local-model').value.trim()
+            };
+            if (apiKey) {
+                config.api_key = apiKey;
+            }
+
+            const btn = document.getElementById('llm-save-btn');
+            const status = document.getElementById('llm-save-status');
+            setLoading(btn, true);
+
+            fetch('/api/llm-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            })
+                .then(r => r.json())
+                .then(data => {
+                    setLoading(btn, false);
+                    if (data.status === 'ok') {
+                        status.textContent = '✅ 配置已保存';
+                        status.style.color = 'var(--success)';
+                        setTimeout(() => status.textContent = '', 3000);
+                    } else {
+                        status.textContent = '❌ ' + data.message;
+                        status.style.color = 'var(--danger)';
+                    }
+                })
+                .catch(e => {
+                    setLoading(btn, false);
+                    status.textContent = '❌ 网络错误';
+                    status.style.color = 'var(--danger)';
+                });
+        }
 
         let dirBrowserPath = '';
         let dirBrowserSelectedPath = '';
