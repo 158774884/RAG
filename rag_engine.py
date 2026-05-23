@@ -45,7 +45,7 @@ class RAGEngine:
         if count > 0:
             self._load_sources_from_db()
         self._refresh_cache()
-        print(f"引擎就绪，知识库: {count} 条片段")
+        print(f"Engine ready, knowledge base: {count} chunks")
 
     def _load_sources_from_db(self):
         try:
@@ -133,7 +133,7 @@ class RAGEngine:
                 return "\n".join(texts)
             return None
         except Exception as e:
-            print(f"  读取失败 {os.path.basename(file_path)}: {e}")
+            print(f"  Read failed {os.path.basename(file_path)}: {e}")
             return None
 
     def _split_text(self, text: str, source: str) -> List[Dict]:
@@ -213,7 +213,7 @@ class RAGEngine:
         metadatas = [{"source": d["source"], "chunk_id": d["chunk_id"]} for d in docs]
         documents = [d["content"] for d in docs]
 
-        print(f"正在写入 {len(documents)} 个文档片段...")
+        print(f"Writing {len(documents)} chunks...")
         self.collection.add(ids=ids, metadatas=metadatas, documents=documents)
         self._invalidate_cache()
 
@@ -240,7 +240,7 @@ class RAGEngine:
         metadatas = [{"source": d["source"], "chunk_id": d["chunk_id"]} for d in all_docs]
         documents = [d["content"] for d in all_docs]
 
-        print(f"正在追加 {len(documents)} 个文档片段...")
+        print(f"Appending {len(documents)} chunks...")
         try:
             self.collection.add(ids=ids, metadatas=metadatas, documents=documents)
         except Exception as e:
@@ -318,7 +318,7 @@ class RAGEngine:
 
         best_score = top_results[0][0] if top_results else 0
         if not top_results or best_score < 5.0:
-            print(f"[Query] 本地搜索结果不足 (最高分={best_score:.1f}), llm_enabled={self.llm_enabled}, type={self.llm_type}, has_key={bool(self.llm_api_key)}")
+            print(f"[Query] Local search low score ({best_score:.1f}), llm_enabled={self.llm_enabled}, type={self.llm_type}, has_key={bool(self.llm_api_key)}")
             if self.llm_enabled and self.llm_type == "online" and self.llm_api_key:
                 answer = self._generate_answer_from_web(question)
                 return {
@@ -339,7 +339,7 @@ class RAGEngine:
             })
 
         if self.llm_enabled and self.llm_type == "online" and self.llm_api_key and best_score < 20.0:
-            print(f"[Query] 本地匹配较弱 (最高分={best_score:.1f}), 增强联网搜索")
+            print(f"[Query] Weak local match ({best_score:.1f}), boosting with web search")
             web_info = self._search_web(question)
             if web_info:
                 answer = self._generate_answer_llm_with_web(question, sources, web_info)
@@ -384,8 +384,7 @@ class RAGEngine:
         answer = "。\n".join(answer_parts[:3])
 
         source_files = list(dict.fromkeys(os.path.basename(s["source"]) for s in sources))
-        answer += f"\n\n参考文件: {', '.join(source_files[:3])}"
-
+        answer += f"\n\n[Reference: {', '.join(source_files[:3])}]"
         return answer
 
     def _load_llm_config(self):
@@ -407,9 +406,9 @@ class RAGEngine:
                     self.llm_local_url = saved["local_url"]
                 if saved.get("local_model"):
                     self.llm_local_model = saved["local_model"]
-                print(f"[LLM] 已加载配置: enabled={self.llm_enabled}, type={self.llm_type}, model={self.llm_model}, base_url={self.llm_base_url}")
+                print(f"[LLM] Loaded config: enabled={self.llm_enabled}, type={self.llm_type}, model={self.llm_model}, base_url={self.llm_base_url}")
         except Exception as e:
-            print(f"[LLM] 加载配置失败: {e}")
+            print(f"[LLM] Config load failed: {e}")
 
     def _save_llm_config(self):
         try:
@@ -425,7 +424,7 @@ class RAGEngine:
             with open(LLM_CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(saved, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"[LLM] 保存配置失败: {e}")
+            print(f"[LLM] Config save failed: {e}")
 
     def update_llm_config(self, config: Dict):
         if "enabled" in config:
@@ -443,7 +442,7 @@ class RAGEngine:
         if "local_model" in config:
             self.llm_local_model = config["local_model"]
         self._save_llm_config()
-        print(f"[LLM] 配置已保存: enabled={self.llm_enabled}, type={self.llm_type}, model={self.llm_model}")
+        print(f"[LLM] Config saved: enabled={self.llm_enabled}, type={self.llm_type}, model={self.llm_model}")
 
     def get_llm_config(self) -> Dict:
         return {
@@ -496,8 +495,8 @@ class RAGEngine:
             }).encode("utf-8")
 
             url = f"{self.llm_base_url}/chat/completions"
-            print(f"[LLM] 调用在线模型: {url}")
-            print(f"[LLM] 模型: {self.llm_model}, Key: {self.llm_api_key[:8]}...")
+            print(f"[LLM] Calling online model: {url}")
+            print(f"[LLM] Model: {self.llm_model}, Key: {self.llm_api_key[:8]}...")
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.llm_api_key}"
@@ -507,17 +506,17 @@ class RAGEngine:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
                 answer = result["choices"][0]["message"]["content"]
-                print(f"[LLM] 在线模型返回成功，长度: {len(answer)}")
+                print(f"[LLM] Online model returned, length: {len(answer)}")
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
-            print(f"[LLM] HTTP错误 {e.code}: {body}")
-            return f"[大模型调用失败: HTTP {e.code}]\n\n{body[:300]}\n\n已切换为原文摘抄模式。\n\n" + self._generate_answer_legacy(sources)
+            print(f"[LLM] HTTP error {e.code}: {body}")
+            return f"[LLM call failed: HTTP {e.code}]\n\n{body[:300]}\n\nFalling back to excerpt mode.\n\n" + self._generate_answer_legacy(sources)
         except Exception as e:
-            print(f"[LLM] 异常: {e}")
-            return f"[大模型调用失败: {e}]\n\n已切换为原文摘抄模式。\n\n" + self._generate_answer_legacy(sources)
+            print(f"[LLM] Exception: {e}")
+            return f"[LLM call failed: {e}]\n\nFalling back to excerpt mode.\n\n" + self._generate_answer_legacy(sources)
 
         source_files = list(dict.fromkeys(os.path.basename(s["source"]) for s in sources))
-        answer += f"\n\n📄 参考文件: {', '.join(source_files[:5])}"
+        answer += f"\n\n[Reference: {', '.join(source_files[:5])}]"
         return answer
 
     def _call_local_llm(self, prompt: str, sources: List[Dict]) -> str:
@@ -543,10 +542,10 @@ class RAGEngine:
                 result = json.loads(resp.read().decode("utf-8"))
                 answer = result.get("response", "")
         except Exception as e:
-            return f"[本地模型调用失败: {e}]\n\n请确认 Ollama 已启动且模型已下载。\n\n" + self._generate_answer_legacy(sources)
+            return f"[Local model call failed: {e}]\n\nPlease ensure Ollama is running and model is downloaded.\n\n" + self._generate_answer_legacy(sources)
 
         source_files = list(dict.fromkeys(os.path.basename(s["source"]) for s in sources))
-        answer += f"\n\n📄 参考文件: {', '.join(source_files[:5])}"
+        answer += f"\n\n[Reference: {', '.join(source_files[:5])}]"
         return answer
 
     def _generate_answer_llm_with_web(self, question: str, sources: List[Dict],
@@ -576,7 +575,7 @@ class RAGEngine:
 
         answer = "。\n".join(answer_parts)
         source_files = list(dict.fromkeys(os.path.basename(s["source"]) for s in sources))
-        answer += f"\n\n📄 参考文件: {', '.join(source_files[:5])}"
+        answer += f"\n\n[Reference: {', '.join(source_files[:5])}]"
         return answer
 
     def _search_web(self, query: str) -> str:
@@ -593,18 +592,24 @@ class RAGEngine:
                 raw = resp.read().decode("utf-8", errors="replace")
 
             results = []
-            for match in re.finditer(r'<a[^>]*class="result-link"[^>]*href="([^"]*)"[^>]*>([^<]*)</a>', raw):
-                url = match.group(1)
-                title = match.group(2).strip()
-                results.append({"title": title, "url": url, "snippet": ""})
+            for match in re.finditer(r'<a[^>]*rel="nofollow"[^>]*href="([^"]*)"[^>]*>(.*?)</a>', raw, re.DOTALL):
+                ddg_url = match.group(1)
+                title = re.sub(r'<[^>]+>', '', match.group(2)).strip()
+                title = html_module.unescape(title)
+                if title:
+                    real_url = ddg_url
+                    m = re.search(r'uddg=([^&]+)', ddg_url)
+                    if m:
+                        real_url = urllib.parse.unquote(m.group(1))
+                    results.append({"title": title, "url": real_url, "snippet": ""})
 
-            snippets = re.findall(r'<td class="result-snippet"[^>]*>(.*?)</td>', raw, re.DOTALL)
+            snippets = re.findall(r"<td class=['\"]result-snippet['\"][^>]*>(.*?)</td>", raw, re.DOTALL)
             for i, s in enumerate(snippets):
                 if i < len(results):
                     clean = re.sub(r'<[^>]+>', '', s).strip()
                     results[i]["snippet"] = html_module.unescape(clean)
 
-            print(f"[WebSearch] DuckDuckGo 搜索 '{query}' 得到 {len(results)} 条结果")
+            print(f"[WebSearch] DuckDuckGo '{query}' -> {len(results)} results")
             if results:
                 lines = []
                 for r in results[:5]:
@@ -612,7 +617,7 @@ class RAGEngine:
                 return "\n\n".join(lines)
             return ""
         except Exception as e:
-            print(f"[WebSearch] 搜索失败: {e}")
+            print(f"[WebSearch] search failed: {e}")
             return ""
 
     def _generate_answer_from_web(self, question: str) -> str:
@@ -650,8 +655,8 @@ class RAGEngine:
             }).encode("utf-8")
 
             url = f"{self.llm_base_url}/chat/completions"
-            print(f"[Web] 联网回答调用: {url}")
-            print(f"[Web] 模型: {self.llm_model}")
+            print(f"[Web] Calling web answer: {url}")
+            print(f"[Web] Model: {self.llm_model}")
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.llm_api_key}"
@@ -661,19 +666,19 @@ class RAGEngine:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
                 answer = result["choices"][0]["message"]["content"]
-                print(f"[Web] 联网回答成功，长度: {len(answer)}")
+                print(f"[Web] Web answer returned, length: {len(answer)}")
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
-            print(f"[Web] HTTP错误 {e.code}: {body}")
-            return f"[联网检索失败: HTTP {e.code}]\n\n{body[:300]}"
+            print(f"[Web] HTTP error {e.code}: {body}")
+            return f"[Web search failed: HTTP {e.code}]\n\n{body[:300]}"
         except Exception as e:
-            print(f"[Web] 异常: {e}")
-            return f"[联网检索失败: {e}]\n\n请检查网络连接和大模型 API 配置。"
+            print(f"[Web] Exception: {e}")
+            return f"[Web search failed: {e}]\n\nPlease check network and API config."
 
         if web_results:
-            answer += "\n\n🌐 回答来源: 实时网络搜索 + 大模型总结"
+            answer += "\n\n[Source: Web search + LLM summary]"
         else:
-            answer += "\n\n🌐 回答来源: 大模型自身知识（网络搜索不可用）"
+            answer += "\n\n[Source: LLM knowledge (web search unavailable)]"
         return answer
 
     def get_db_stats(self) -> Dict:

@@ -285,7 +285,7 @@ if __name__ == '__main__':
     sock.settimeout(0.5)
     if sock.connect_ex(('127.0.0.1', PORT)) == 0:
         sock.close()
-        print(f"\n⚠ 端口 {PORT} 被占用，正在清理...")
+        print(f"\n*** 端口 {PORT} 被占用，正在清理 ***")
         import subprocess, time
         result = subprocess.run(
             f'cmd /c "netstat -ano | findstr :{PORT}"',
@@ -307,6 +307,6 @@ if __name__ == '__main__':
     else:
         sock.close()
 
-    print(f"启动服务: http://127.0.0.1:{PORT}")
-    print(f"配置文件端口: {SERVER_PORT}, 实际端口: {PORT}")
+    print(f"Starting: http://127.0.0.1:{PORT}")
+    print(f"Default port: {SERVER_PORT}, actual: {PORT}")
     app.run(host='0.0.0.0', port=PORT, debug=False, threaded=True)
